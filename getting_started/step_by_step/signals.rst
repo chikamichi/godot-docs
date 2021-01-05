@@ -40,18 +40,23 @@ Your scene tree should look like this:
 
 In the Timer node's properties, check the "On" box next to *Autostart*. This will
 cause the timer to start automatically when you run the scene. You can leave the
-*Wait Time* at 1 second.
+*Wait Time* at 1 second, that is: the Timer node will count down from 1 to 0, done!
 
-Next to the "Inspector" tab is a tab labeled "Node". Click on this tab and you'll
+The *One Shot* property is disabled by default, and that is just what we want here:
+for the Timer's timer to automatically reset and restart itself once it reaches 0.
+
+.. note:: You may hover any node's property to display a concise description.
+
+Next to the "Inspector" tab, is a tab labeled "Node". Click on this tab and you'll
 see all of the signals that the selected node can emit. In the case of the Timer
-node, the one we're concerned with is "timeout". This signal is emitted whenever
-the Timer reaches ``0``.
+node, the one we're concerned with is "timeout". This signal is automatically
+emitted whenever the Timer reaches ``0``.
 
 .. image:: img/signals_node_tab_timer.png
 
 Click on the "timeout()" signal and click "Connect..." at the bottom of the signals
-panel. You'll see the following window, where you can define how you want to connect
-the signal:
+panel (you may also simply double click "timeout()"). You'll see the following window,
+where you can define how you want to connect the signal:
 
 .. image:: img/signals_connect_dialog_timer.png
 
@@ -124,18 +129,22 @@ change the Timer's *Wait Time* property to alter this.
 Connecting signals in code
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can also make the signal connection in code rather than with the editor. This
-is usually necessary when you're instancing nodes via code and so you can't use
+You can also establish the signal connection with code, rather than with the editor. This
+is usually necessary when you're instancing nodes at runtime and therefore can't use
 the editor to make the connection.
 
-First, disconnect the signal by selecting the connection in the Timer's "Node"
-tab and clicking disconnect.
+Let's automate our connection using code. First, delete the manual connection, by
+selecting the Timer's "_on_Timer_timeout()" signal in the Timer's "Node" tab and
+clicking "Disconnect" (you may also do that using the context menu by
+right-clicking "_on_Timer_timeout").
 
 .. image:: img/signals_disconnect_timer.png
 
 To make the connection in code, we can use the ``connect`` function. We'll put it
-in ``_ready()`` so that the connection will be made on run. The syntax of the
-function is ``<source_node>.connect(<signal_name>, <target_node>, <target_function_name>)``.
+in ``_ready()`` so that the connection will be made upon the Node entering the
+scene.
+
+The syntax of the function is ``<source_node>.connect(<signal_name>, <target_node>, <target_function_name>)``.
 Here is the code for our Timer connection:
 
 .. tabs::
@@ -179,18 +188,19 @@ You can also declare your own custom signals in Godot:
     extends Node2D
 
 
-    signal my_signal
+    # Let's create a custom signal named "blinked".
+    signal blinked
 
  .. code-tab:: csharp
 
     public class Main : Node2D
     {
         [Signal]
-        public delegate void MySignal();
+        public delegate void Blinked();
     }
 
-Once declared, your custom signals will appear in the Inspector and can be connected
-in the same way as a node's built-in signals.
+Once declared, your custom signals will appear in the node's "Inspector" tab
+and can be connected in the same way as a node's built-in signals.
 
 To emit a signal via code, use the ``emit_signal`` function:
 
@@ -200,27 +210,28 @@ To emit a signal via code, use the ``emit_signal`` function:
     extends Node2D
 
 
-    signal my_signal
+    signal blinked
 
 
     func _ready():
-        emit_signal("my_signal")
+        emit_signal("blinked")
 
  .. code-tab:: csharp
 
     public class Main : Node2D
     {
         [Signal]
-        public delegate void MySignal();
+        public delegate void Blinked();
 
         public override void _Ready()
         {
-            EmitSignal(nameof(MySignal));
+            EmitSignal(nameof(Blinked));
         }
     }
 
-A signal can also optionally declare one or more arguments. Specify the
-argument names between parentheses:
+A signal can also optionally declare one or more arguments. You specify the
+argument names between parentheses. Let's have the "blinked" signal report
+how many times the Sprite blinked:
 
 .. tabs::
  .. code-tab:: gdscript GDScript
@@ -228,14 +239,14 @@ argument names between parentheses:
     extends Node
 
 
-    signal my_signal(value, other_value)
+    signal blinked(count)
 
  .. code-tab:: csharp
 
     public class Main : Node
     {
         [Signal]
-        public delegate void MySignal(bool value, int other_value);
+        public delegate void Blinked(int count);
     }
 
 .. note::
@@ -245,7 +256,7 @@ argument names between parentheses:
     emit any number of arguments when you emit signals. So it's up to you to
     emit the correct values.
 
-To pass values, add them as the second argument to the ``emit_signal`` function:
+To pass concrete values, add them as additional arguments to the ``emit_signal`` function:
 
 .. tabs::
  .. code-tab:: gdscript GDScript
@@ -253,22 +264,72 @@ To pass values, add them as the second argument to the ``emit_signal`` function:
     extends Node
 
 
-    signal my_signal(value, other_value)
+    signal blinked(count)
+
+    var blink_count = 0
 
 
-    func _ready():
-        emit_signal("my_signal", true, 42)
+    # ... _ready function stays the same ...
+
+
+    func _on_Timer_timeout():
+        $Sprite.visible = !$Sprite.visible
+        blink_count += 1
+        emit_signal("blinked", blink_count)
 
  .. code-tab:: csharp
 
     public class Main : Node
     {
         [Signal]
-        public delegate void MySignal(bool value, int other_value);
+        public delegate void Blinked(int count);
 
+        private int _blink_count;
+
+        // ... _Ready function stays the same ...
+
+        public override void _on_Timer_timeout()
+        {
+            var sprite = GetNode<Sprite>("Sprite");
+            sprite.Visible = !sprite.Visible;
+            _blink_count += 1;
+            EmitSignal(nameof(Blinked), _blink_count);
+        }
+    }
+
+Remember that signals are local to a node. In order to connect to a signal another
+node has emitted (be it a built-in or custom signal), you first need to access the
+emitting node (using, ``get_node``, or the ``$`` shortcut, or ``get_parent``, etc.)
+then ``.connect`` to the relevant signal.
+
+For instance, the Sprite node, a direct child of TimerExample, could report how many
+times it has blinked so far:
+
+.. tabs::
+ .. code-tab:: gdscript GDScript
+
+    extends Sprite
+
+
+    func _ready():
+        # get_parent() will return the TimerExample node, which emits "blinked" signals.
+        get_parent().connect("blinked", self, "report_blink_count")
+
+
+    func report_blink_count(count):
+        print("I have blinked %d times so far..." % count)
+
+ .. code-tab:: csharp
+
+    public class Sprite : Node
+    {
         public override void _Ready()
         {
-            EmitSignal(nameof(MySignal), true, 42);
+            GetParent().Connect("blinked", this, nameof(ReportBlinkCount));
+        }
+
+        public override void ReportBlinkCount(int count) {
+            GD.Print("I have blinked %d times so far...", count);
         }
     }
 
